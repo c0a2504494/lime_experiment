@@ -1,3 +1,6 @@
 
 __pycache__/
 *.py[cod]
+
+# 外部公開リポジトリのローカルクローン（再取得手順は docs/rl_cube_stack_roadmap.md）
+external/
