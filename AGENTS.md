@@ -177,14 +177,24 @@ User direction: reproduce official LimeSimulDemo grasping method in MuJoCo + tak
 - tilt 80 partially works (cube z 0.0376 then slips)
 - Photos: rl_artifacts/pinch_success.jpg (10-frame grid showing straddle→close→airborne lift)
 
-### Remaining work for full stacking:
-1. Transport to cube B + place (IK path with load, descent, open)
-2. Lift height limited by workspace — z 0.10 padmid max in some directions; cube z 0.045-0.063 reached.
-   For stacking need cube bottom > 0.057+clearance — marginal! May need higher lift or tilted transport
-3. THEN: port everything to env_lime_cube.py (domain randomization compat — friction DR 0.3-1.0 vs pads 3.0
+### STACK SUCCESS (validate_stack.py in git) — full pick-and-stack verified!
+Result: xy err 8.6mm, zdiff exactly 0.057. Photos: rl_artifacts/stack_success.jpg (10-frame grid).
+Method (details in validate_stack.py header comments):
+1. Vertical pinch grasp at A=(0.17,0) → 2. home pose transition: cube CRADLED high (z 0.144 —
+   beats the vertical-carry workspace ceiling z~0.064 which makes stacking impossible)
+   → 3. B placed at measured carry radius, 45° away → PURE joint1 rotation swings cube over B
+   (NO IK during transport — orientation constraints fight at rotated yaw and drop the cube!)
+   → 4. descend by joint2 increments (+0.06rad/40steps, sign auto-detect, only 3 iterations needed)
+   → 5. release: cube moves only 0.0856→0.0845 (gentle), retract.
+
+### Remaining work:
+1. Generalize: current validation uses fixed cube positions (A at (0.17,0), B teleported to carry
+   radius). For env training must handle RANDOM positions — need radius-independent transport
+   (joint1 rotation + radial correction via joint2/3, or IK with transport-appropriate orientation weight)
+2. Port everything to env_lime_cube.py (domain randomization compat — friction DR 0.3-1.0 vs pads 3.0
    needs rethinking: pads are rubber fixed at 3.0, cube/table friction randomized)
-4. SAC+HER training can start once scripted stack succeeds
-5. Real-robot correspondence: pads = physical rubber blocks glued inside fingers (hardware mod required!)
+3. SAC+HER training can start once scripted stack is generalized
+4. Real-robot correspondence: pads = physical rubber blocks glued inside fingers (hardware mod required!)
 
 ### OAuth token refresh procedure (recurring issue)
 When colab-cloud MCP fails: token in C:\Users\c0a2504494\AppData\Roaming\devin\mcp\oauth\f0ebc51063be8558.json
