@@ -46,6 +46,9 @@ class LimeCubeStackEnv(gym.Env):
         success_z_tol=0.015,
         randomize=True,
         cube_size=CUBE_SIZE,
+        obs_noise_pos=0.004,  # std of gaussian noise on observed cube positions (m).
+                              # 4mm ~ realistic color-segmentation perception error.
+                              # Set 0.0 for ground-truth observations.
         render_width=640,
         render_height=480,
         camera="overview",
@@ -60,6 +63,7 @@ class LimeCubeStackEnv(gym.Env):
         self.success_xy_tol = success_xy_tol
         self.success_z_tol = success_z_tol
         self.randomize = randomize
+        self.obs_noise_pos = obs_noise_pos
         self.cube_size = cube_size
         self.camera = camera
         self.render_width = render_width
@@ -141,6 +145,13 @@ class LimeCubeStackEnv(gym.Env):
         ee_pos, ee_quat = self._ee_pos_quat()
         ca = self._cube_state(self.cube_a_qpos, self.cube_a_dof)
         cb = self._cube_state(self.cube_b_qpos, self.cube_b_dof)
+        # observation noise: models real perception error (color segmentation on the real
+        # robot is expected ~few mm). Applied to cube positions AND derived relative vectors
+        # consistently. achieved/desired goals stay TRUE so reward/HER credit assignment is
+        # unaffected. Orientation noise is a TODO (v1: position only).
+        if self.obs_noise_pos > 0.0:
+            ca = (ca[0] + np.random.normal(0, self.obs_noise_pos, 3), ca[1], ca[2], ca[3])
+            cb = (cb[0] + np.random.normal(0, self.obs_noise_pos, 3), cb[1], cb[2], cb[3])
         obs = np.concatenate([
             qpos_arm, qpos_grip,
             qvel_arm, qvel_grip,

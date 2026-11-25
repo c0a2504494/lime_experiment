@@ -348,3 +348,27 @@ Direct teleport into cradle pose CANNOT work (0/5 held). Failure causes in order
    if eval success still 0, consult user re: demos/shaping/curriculum.
 4. remember: after grasp training, record terminal grasp states for stack init distribution.
 
+
+### URGENT RESUME INSTRUCTIONS (2026-11-25 late) — training launch blocked by MCP outage
+
+State: everything is READY. obs-noise (4mm std, position-only, goals stay true) implemented
+in env_lime_cube.py as default obs_noise_pos=0.004. NOT yet transferred to Colab.
+The colab-cloud MCP server died mid-session (token was refreshed OK but server process
+unreachable — needs T3/devin restart). NOTHING was launched yet.
+
+TO LAUNCH TRAINING (first thing next session, ~5 min):
+1. verify colab-cloud MCP is back (list_runtimes); runtime r-5bb32b41-13fa-4759-839d-657794e6f393
+   session s-34f59485-4b22-497e-9682-98e2228c72b2 (if dead: new CPU runtime + pip install xacro
+   mujoco scipy stable_baselines3 imageio imageio-ffmpeg + clone turtlebot3_lime + gist files
+   + python bootstrap_colab.py — full procedure earlier in this file)
+2. transfer env_lime_cube.py (gzip+base64+sha256 method; hash in git or recompute locally)
+3. smoke: noise diff ~mm scale, achieved_goal stays true
+4. launch BOTH in background (nohup, MUJOCO_GL=egl):
+   python train_sac_her.py --task grasp --steps 500000 --out /content/work/run_grasp
+   python train_sac_her.py --task stack --steps 500000 --out /content/work/run_stack
+   (~4-6h each on CPU; parallel on same runtime acceptable — compute is ~0.08 units/h, nearly free)
+5. monitor: run_*/log.txt, curve.png, eval videos every 25k steps. Decision gate at 100k:
+   eval success still 0 -> consult user re: demos/shaping before burning more compute.
+6. Colab compute budget measured: CPU standard 0.07-0.08 units/h -> 100 units/month Pro
+   quota is effectively unlimited for this project (~1300h). GPU unnecessary (physics CPU-bound).
+
