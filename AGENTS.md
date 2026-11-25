@@ -187,14 +187,36 @@ Method (details in validate_stack.py header comments):
    → 4. descend by joint2 increments (+0.06rad/40steps, sign auto-detect, only 3 iterations needed)
    → 5. release: cube moves only 0.0856→0.0845 (gentle), retract.
 
-### Remaining work:
-1. Generalize: current validation uses fixed cube positions (A at (0.17,0), B teleported to carry
-   radius). For env training must handle RANDOM positions — need radius-independent transport
-   (joint1 rotation + radial correction via joint2/3, or IK with transport-appropriate orientation weight)
-2. Port everything to env_lime_cube.py (domain randomization compat — friction DR 0.3-1.0 vs pads 3.0
-   needs rethinking: pads are rubber fixed at 3.0, cube/table friction randomized)
-3. SAC+HER training can start once scripted stack is generalized
-4. Real-robot correspondence: pads = physical rubber blocks glued inside fingers (hardware mod required!)
+### PRE-TRAINING STAGE COMPLETE (2025-12, commit 9fbe2d3) — ready to train!
+1. scene.xml now INTEGRATES all validated physics: build_scene.py bakes servo gains
+   (arm kp400 kv40 ±8, gripper kp1500 kv15 ±4), joint frictionloss 0.02/damping 0.1 (XML postproc),
+   contact exclude; then chains make_pad_scene.py (pads + contact stiffening + equality stiffening).
+   VALIDATED: st5.py stacking on integrated scene reproduced exactly (xy 8.6mm, zdiff 0.057).
+2. env_lime_cube.py fixed: IK was broken (6x6 jacobian vs 3d err — crashed instantly! env had never
+   run since position-only IK change) → now 3x6. compute_reward rewritten to match _is_success
+   (xy+zdiff) — HER relabeling was inconsistent before.
+   SMOKE TESTED: 5 seeds × 30 random steps stable, success teleport detected, rewards correct.
+3. train_sac_her.py READY: SAC+HER frozen hyperparams (gamma .95, lr 3e-4, batch 256, buffer 1e6,
+   n_sampled_goal 4, future). EvalCallback: success rate + mp4 videos every 25k, checkpoints 50k,
+   curve.png. VERIFIED end-to-end with 600-step mini run (TRAINING-DONE, 299 updates).
+4. Colab setup notes: pip install stable_baselines3 imageio imageio-ffmpeg; cv2 is BROKEN on colab
+   (no .ocl) — train script patches it internally; MUJOCO_GL=egl needed for render (videos).
+   Measured ~34 fps on cpu device → 300k steps ≈ 2.5h per run. MuJoCo physics is CPU-bound;
+   consider --steps 300k for first real run.
+
+### NEXT (training phase):
+1. Launch first real training run: `python train_sac_her.py --steps 300000` in BACKGROUND on colab
+   (nohup, since MCP calls time out) — monitor via artifacts_test-style logs + curve.png
+2. Expect: initial success rate 0 — sparse reward means HER is critical; watch for first nonzero evals.
+   If still 0 at 100k+ steps, consider reward shaping or scripted-demo bootstrapping (BC init).
+3. Known limitation: env uses position-only IK with home-tilt orientation — NOT the validated vertical
+   grasp. RL must discover its own grasp within this constraint; if learning stalls, revisit orientation
+   control or action space (joint-space actions alternative).
+4. Remaining design Q: cube mass DR 70-105g vs official demo's 39g — keep as-is until evidence.
+
+### Real-robot correspondence note
+pads = physical rubber blocks glued inside fingers (hardware mod required!). Official demo lightened
+cans to 39g even with fake grasping — real gripper torque is weak.
 
 ### OAuth token refresh procedure (recurring issue)
 When colab-cloud MCP fails: token in C:\Users\c0a2504494\AppData\Roaming\devin\mcp\oauth\f0ebc51063be8558.json

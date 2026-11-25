@@ -22,6 +22,20 @@ import numpy as np
 sys.path.insert(0, "/content/work")
 
 import gymnasium as gym
+
+# Colab ships a broken cv2 (no .ocl) which crashes SB3's atari_wrappers import.
+# We never use atari/cv2 — patch the attribute if missing.
+try:
+    import cv2
+    if not hasattr(cv2, "ocl"):
+        class _Ocl:
+            @staticmethod
+            def setUseOpenCL(x):
+                pass
+        cv2.ocl = _Ocl
+except ImportError:
+    pass
+
 from stable_baselines3 import SAC
 from stable_baselines3.her import HerReplayBuffer
 from stable_baselines3.common.callbacks import BaseCallback
