@@ -55,17 +55,26 @@
 - NEXT: (1) verify/apply servo force strengthening, (2) render keyframes of close/lift to see
   exactly where contact happens, (3) consider lowering grasp target z or longer settle before
   close, (4) if slip persists increase gripper forcerange/friction or close harder (ctrl range).
-- Session 2 end findings: validate4/5/6 — gripper DOES engage cube (gq stops at 0.0117 vs ctrl
-  -0.010 target = cube blocks closing) but cube slips out vertically during lift (gq → 0.003,
-  then -0.011 = fully closed empty). KEY: padmid z NEVER settles below ~0.057 regardless of
-  target (0.048 or 0.035) or servo strength (forcerange ±8 + kp400 in validate6) — strongly
-  suggests FINGERTIPS ARE ALREADY ON THE TABLE at padmid z 0.057, i.e. effective finger length
-  joint→tip ≈ 5.7cm (not 4.4cm — that was pad-body-to-ee offset). If confirmed, grip geometry is
-  table-constrained: fingers can't wrap lower. NEXT SESSION: (a) measure fingertip geom z and
-  table contact at settled grasp pose; (b) render CLOSE-UP keyframes (zoom camera at cube);
-  (c) if fingers too long to wrap cube bottom, options: accept high grip + increase friction
-  (cube/pad contact friction), tilt approach, or grip cube higher deliberately and transport
-  slowly; (d) also check pad taper/step shape — contact may be at cube top edge only.
+- Session 3 conclusion (validate7-9 + mesh analysis + closeup image): **the 57mm cube is at the
+  gripper's geometric limit and CANNOT be stably grasped in sim** — root cause is finger taper:
+  - Finger inner-gap width varies with height: ~86mm near tips (z 0-0.02) → ~57mm at z 0.04-0.06.
+    Tips flare outward. Contact on the 57mm cube concentrates at the TOP EDGE band (z 0.049-0.056)
+    regardless of centering (xy err <0.5mm achieved), squeeze force (tested kp250/±4N ≈ 4N per
+    finger — way above the 0.9N needed) or friction (geom friction 3.0 test).
+  - Close-up render CONFIRMS: finger tips flare outward at the bottom; right finger clips the
+    cube corner. Contacts are edge/point-like, cube rotates out during lift.
+  - Fingertips DO reach the table at padmid z≈0.057 (mesh z min -0.009 world) — long fingers
+    (mesh z span ~9cm) are not the blocker; the TAPER is.
+  - xy closed-loop servo correction WORKS (servo_xy in validate9.py — iterative jacBody position
+    correction in padmid frame, error <0.5mm). Reusable for RL env control.
+  - Servo tuning applied in validate7-9: joints kp400/kv40/forcerange±8, gripper kp250/kv25/±4.
+  - USER DECISION: verify on REAL robot whether 57mm cube can be grasped at all before further
+    sim work. Sim development PAUSED pending result. If real grasp works, replicate its method
+    (approach height/angle/grip width) in sim. If not: smaller cubes (30-40mm fit inside taper),
+    rubber friction pads, or flattened finger collision geoms (sim-only) are the fallback options.
+- Key validation scripts on Colab /content/work: validate9.py (full pipeline: offline IK waypoints
+  + joint-interpolated execution + closed-loop xy servo + lift test), pf.py (inner-face profile),
+  mm.py (mesh vertex measurement), vi.py (closeup render). Copy into repo if runtime dies.
 
 ## Env design decisions (fixed)
 - Action 4D (EE dxyz×0.05m + gripper ±), 20Hz policy, frame_skip 25, physics 500Hz (ts 0.002).
