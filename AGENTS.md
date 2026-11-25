@@ -1,8 +1,8 @@
 # RL Cube Stacking — operational handoff notes (2025-12)
 
 ## Colab cloud runtime (colab-cloud MCP)
-- Runtime: `runtimes/KL8rekbAbs8mB9UpuGoeMZKvlI0vbgv5W1_soMIufUk.` (T4 standard, Colab Pro)
-- Session: `runtimes/KL8rekbAbs8mB9UpuGoeMZKvlI0vbgv5W1_soMIufUk./sessions/s-6e10550e-9a62-414f-bc66-40a512c495a4`
+- Runtime: `runtimes/r-44f74e91-55cf-4f14-894b-546895ea1760` (CPU standard — T4 was unavailable, capacity issue)
+- Session: `runtimes/r-44f74e91-55cf-4f14-894b-546895ea1760/sessions/s-629cf6d0-67f6-426f-abb5-21b8ddebf080`
 - If dead: `list_runtimes` → reuse or `create_runtime` (T4) → `create_session(parent=...)`
 - Work dir on Colab: `/content/work` (scene.xml, env_lime_cube.py, build_scene.py, stack_test2.py, stack_test.mp4)
 - OAuth: colab-cloud already authenticated (google account with Colab Pro). Re-auth via `devin mcp login colab-cloud` if expired.
@@ -20,27 +20,52 @@
 ## Key findings (do not rediscover!)
 - URDF joint frictionloss=1.0Nm / damping=0.7 makes position servos unable to move the arm.
   Fix applied in env `reset()`: frictionloss 0.02 (arm) / 0.01 (gripper), damping 0.1.
-- Strict z-down gripper orientation drives joint5 to its 1.781 rad limit → workspace boundary;
-  incremental IK gets stuck. Orientation-including IK DESTROYS position tracking (j2/j3 cancel motions).
-  Current solution: position-only IK, home pose `[0, 0.1396, 0.903, 0, 1.7813, 0]` tilted ~25° fwd,
-  zax=(0.31, 0, -0.95). ee home pos ≈ (0.17, 0, 0.098).
+- Strict z-down gripper orientation drives joint5 to its 1.781 rad limit for HIGH/FAR targets,
+  but z-down IS reachable exactly for low close targets (grasp height: zdown=-1.000, j5=1.54).
+  Offline IK via scipy SLSQP works well: cost = 30*pos_err² + orient_err², chain waypoints by
+  seeding each solve from previous solution. Orientation target Rdes=diag([-1,1,-1]).
+- **world(table)×link2 penetration**: table geom extends under the arm base; link2 mesh dips 4.4mm
+  into it at zero pose. Contact friction LOCKED joint1 completely (qfrc_constraint cancels actuator
+  force exactly, phantom forces up to 43 million). FIX: `<exclude body1="world" body2="link2"/>`
+  inside `<contact>` inserted into scene.xml post-generation. Bodies: no link1 exists (merged into
+  world); moving chain is link2..link7 + gripper_left/right_link. After fix joint1 converges
+  (err 0.003). TODO: bake the exclude into build_scene.py itself.
+- **ee_site is NOT on gripper centerline**: end_effector_link is a side-mounted tool frame with
+  ~6cm lateral offset from pad center — using it for IK meant the gripper closed on empty space
+  6cm away from the cube. Pads sit ~4.4cm ABOVE ee_site (ee is near fingertip tips). DO NOT use
+  ee_site for grasp positioning. Use pad-midpoint frame instead:
+  padmid = (xpos[gripper_left_link] + xpos[gripper_right_link])/2, position cost on padmid +
+  orientation cost on ee_site rotation (same rigid body rotation).
 - Gripper fingers extend along local +z of ee frame; pads close along local y. Pad opening ~22-80mm.
 - Kinematic chain: pitch joints j2/j3/j5 (y axes), yaw/roll j1/j4/j6 (z axes). Upper arm 124mm.
-  z-down requires total pitch ≈ 180° — inherently at joint5 limit for far targets.
 - Upstream URDF bug: duplicate inertial in link6 (removed placeholder, kept CAD value).
 
-## Current state (scripted stacking test result, stack_test2.py)
-- EE position tracking works after friction fix (err 1-3cm, was 10-16cm before).
-- Grasp FAILS: descend target ee z 0.055 → actual 0.044; gripper closes but cube gets pushed
-  (cube moved from (0.2,-0.08) to (0.189,-0.102)), no grip. cube z stayed 0.027.
-- NEXT debugging steps:
-  1. Measure gripper pad inner distance vs the 57mm cube. Full close ctrl=-0.010 may be too tight
-     OR the pads may be too high/low. Grasp needs partial close for 57mm cube — compute correct
-     ctrl from pad geometry (measure in sim: pad inner x positions at several ctrl values).
-  2. Check finger tip z positions at descend height — fingers must reach below cube center (0.0285).
-     ee z 0.044 may leave fingertips too high → adjust descend target lower (~0.035) or account
-     for finger length offset from ee_site.
-  3. Re-run scripted sequence, iterate on heights/positions. Video at /content/work/stack_test.mp4.
+## Current state (validate2/3.py, 2025-12-16 session 2)
+- Offline-IK waypoint solving in pad-midpoint frame + joint-space interpolated execution.
+- Cube IS grasped and carried partway: lifted to z≈0.039, transported toward B, but SLIPS out
+  during transport. Final xy err 9.6cm, no stack yet.
+- Suspects for slip: (a) gripper squeeze force limited ±1N vs cube weight 0.9N — marginal with
+  friction; (b) servo steady-state sag 2-3cm (joint forcerange ±3Nm binds at err>0.03 rad);
+  (c) grip happens high on the cube edge (padmid z 0.0575 at close vs cube center 0.0285).
+- validate3.py has forcerange patch (joints ±8, gripper ±4) but output was bit-identical —
+  VERIFY the patch actually applied (string replace may have missed).
+- Waypoints used (padmid frame): preA z0.12, graspA z0.048, lift z0.15, preB z0.15, place z0.108,
+  cubes at (0.16,∓0.06). Solver residuals: graspA exact, high waypoints 4-6cm off (unreachable
+  z-down high — fine for transit).
+- NEXT: (1) verify/apply servo force strengthening, (2) render keyframes of close/lift to see
+  exactly where contact happens, (3) consider lowering grasp target z or longer settle before
+  close, (4) if slip persists increase gripper forcerange/friction or close harder (ctrl range).
+- Session 2 end findings: validate4/5/6 — gripper DOES engage cube (gq stops at 0.0117 vs ctrl
+  -0.010 target = cube blocks closing) but cube slips out vertically during lift (gq → 0.003,
+  then -0.011 = fully closed empty). KEY: padmid z NEVER settles below ~0.057 regardless of
+  target (0.048 or 0.035) or servo strength (forcerange ±8 + kp400 in validate6) — strongly
+  suggests FINGERTIPS ARE ALREADY ON THE TABLE at padmid z 0.057, i.e. effective finger length
+  joint→tip ≈ 5.7cm (not 4.4cm — that was pad-body-to-ee offset). If confirmed, grip geometry is
+  table-constrained: fingers can't wrap lower. NEXT SESSION: (a) measure fingertip geom z and
+  table contact at settled grasp pose; (b) render CLOSE-UP keyframes (zoom camera at cube);
+  (c) if fingers too long to wrap cube bottom, options: accept high grip + increase friction
+  (cube/pad contact friction), tilt approach, or grip cube higher deliberately and transport
+  slowly; (d) also check pad taper/step shape — contact may be at cube top edge only.
 
 ## Env design decisions (fixed)
 - Action 4D (EE dxyz×0.05m + gripper ±), 20Hz policy, frame_skip 25, physics 500Hz (ts 0.002).
