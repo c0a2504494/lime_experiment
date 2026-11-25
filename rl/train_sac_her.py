@@ -8,9 +8,9 @@ Usage on Colab:
   MUJOCO_GL=egl python train_sac_her.py [--steps N] [--out DIR]
 
 Artifacts (saved to out dir):
-  checkpoints/   — model zip every 50k steps
-  eval_videos/   — mp4 of greedy eval rollouts every 25k steps
-  curve.png      — training curve (success rate + reward)
+  checkpoints/    Emodel zip every 50k steps
+  eval_videos/    Emp4 of greedy eval rollouts every 25k steps
+  curve.png       Etraining curve (success rate + reward)
   final_model.zip
 """
 import os
@@ -24,7 +24,7 @@ sys.path.insert(0, "/content/work")
 import gymnasium as gym
 
 # Colab ships a broken cv2 (no .ocl) which crashes SB3's atari_wrappers import.
-# We never use atari/cv2 — patch the attribute if missing.
+# We never use atari/cv2  Epatch the attribute if missing.
 try:
     import cv2
     if not hasattr(cv2, "ocl"):
@@ -42,23 +42,32 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, VecVideoRecorder
 
 from env_lime_cube import LimeCubeStackEnv
+from env_lime_grasp import LimeGraspEnv
+from env_lime_stack import LimeStackEnv
 
 SCENE = "/content/work/scene.xml"
 
+TASKS = {
+    "full": LimeCubeStackEnv,    # end-to-end pick+stack (original, hardest)
+    "grasp": LimeGraspEnv,       # task 1: lift cube A 8cm (horizon 80)
+    "stack": LimeStackEnv,       # task 2: stack starting from grasped state (horizon 100)
+}
 
-def make_env():
-    return LimeCubeStackEnv(SCENE)
+
+def make_env(task="full"):
+    return TASKS[task](SCENE)
 
 
 class EvalCallback(BaseCallback):
     """Periodic greedy eval: success rate over n episodes + video frames."""
 
-    def __init__(self, eval_every=25_000, n_eval=5, out_dir="/content/work/artifacts"):
+    def __init__(self, eval_every=25_000, n_eval=5, out_dir="/content/work/artifacts", task="full"):
         super().__init__()
         self.eval_every = eval_every
         self.n_eval = n_eval
         self.out_dir = out_dir
         self.history = []
+        self.task = task
         os.makedirs(out_dir, exist_ok=True)
         os.makedirs(os.path.join(out_dir, "checkpoints"), exist_ok=True)
 
@@ -70,7 +79,7 @@ class EvalCallback(BaseCallback):
         return True
 
     def _run_eval(self):
-        env = LimeCubeStackEnv(SCENE)
+        env = TASKS[self.task](SCENE)
         succ = []
         rews = []
         frames = []
@@ -127,10 +136,11 @@ class EvalCallback(BaseCallback):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--steps", type=int, default=300_000)
-    p.add_argument("--out", type=str, default="/content/work/artifacts")
+    p.add_argument('--out', type=str, default='/content/work/artifacts')
+    p.add_argument('--task', type=str, default='grasp', choices=['full','grasp','stack'])
     args = p.parse_args()
 
-    env = DummyVecEnv([make_env])
+    env = DummyVecEnv([lambda: make_env(args.task)])
     model = SAC(
         "MultiInputPolicy",
         env,
@@ -142,7 +152,7 @@ def main():
         buffer_size=1_000_000,
         verbose=1,
     )
-    cb = EvalCallback(out_dir=args.out)
+    cb = EvalCallback(out_dir=args.out, task=args.task)
     model.learn(total_timesteps=args.steps, callback=cb)
     model.save(os.path.join(args.out, "final_model"))
     print("TRAINING-DONE")
@@ -150,3 +160,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

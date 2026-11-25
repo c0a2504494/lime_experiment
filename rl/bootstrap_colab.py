@@ -86,13 +86,30 @@ if __name__ == "__main__":
         subprocess.run([sys.executable, "-m", "pip", "install", "-q", "xacro"], check=True)
     expand_xacro()
 
-    # build the scene (build_scene.py must already be in WORK)
-    sys.path.insert(0, WORK)
-    import build_scene
-
-    spec = build_scene.build_scene()
-    model = spec.compile()
-    print("scene compile OK nq:", model.nq, "nu:", model.nu)
-    with open(os.path.join(WORK, "scene.xml"), "w") as f:
-        f.write(spec.to_xml())
-    print("scene.xml written")
+    # build the scene. IMPORTANT: run build_scene.py's main block as a subprocess —
+    # it writes scene_raw.xml, applies XML postprocessing (joint friction/damping fix,
+    # contact exclude) and chains make_pad_scene.py (pads + contact/equality stiffening).
+    # Importing build_scene() directly and writing spec.to_xml() bypasses ALL of those
+    # validated friction-grasping fixes — do not do that.
+    r = subprocess.run(
+        [sys.executable, os.path.join(WORK, "build_scene.py")],
+        capture_output=True, text=True, cwd=WORK,
+    )
+    print(r.stdout)
+    if r.returncode != 0:
+        print("STDERR:", r.stderr[-2000:])
+        raise RuntimeError("build_scene.py failed")
+    scene_path = os.path.join(WORK, "scene.xml")
+    with open(scene_path) as f:
+        scene = f.read()
+    # verify the critical fixes are present (fail loud, not after hours of training)
+    checks = {
+        "exclude world/link2": '<exclude body1="world" body2="link2"/>' in scene,
+        "frictionloss fixed": 'frictionloss="0.02"' in scene,
+        "pads present": 'name="pad_l_geom"' in scene or "pad_l" in scene,
+        "contact stiffening": "solimp" in scene,
+    }
+    for k, v in checks.items():
+        print(("PASS " if v else "FAIL ") + k)
+    assert all(checks.values()), "scene.xml is missing validated fixes!"
+    print("scene.xml verified")

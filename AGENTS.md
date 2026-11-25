@@ -204,6 +204,32 @@ Method (details in validate_stack.py header comments):
    Measured ~34 fps on cpu device → 300k steps ≈ 2.5h per run. MuJoCo physics is CPU-bound;
    consider --steps 300k for first real run.
 
+### TASK DECOMPOSITION DESIGN (user decision 2026-11) — 2-task curriculum
+User directive: split learning into two tasks instead of end-to-end.
+Rationale: full stack needs 150-200 steps (gamma 0.95 effective horizon 20 can't propagate
+final reward back to grasp actions); subtasks have short horizons where frozen gamma works.
+Navigation/cube-discovery is the MOBILE BASE's job (real robot) — arm tasks may assume the
+cube is already in the workspace. Base alignment means real-world spawn distribution is
+EASIER than training DR — train wide, deploy easy.
+
+- TASK 1 grasp (env_lime_grasp.py): cube A random on table, success = lift to spawn+8cm
+  within 3cm tol. horizon 80 steps. desired_goal = spawn pos +8cm z (HER-compatible).
+- TASK 2 stack (env_lime_stack.py): episode starts with cube A ALREADY GRASPED
+  (canonical carry pose CARRY_POSE + joint noise ±0.05rad, cube teleported between pads,
+  close gripper, settle 100 steps). horizon 100 steps. Success/reward = original env.
+- train_sac_her.py --task {grasp,stack,full}; default grasp.
+- KNOWN SIMPLIFICATION: stack init distribution is canonical+noise, not the true terminal
+  distribution of the grasp policy. AFTER task 1 is trained: record terminal grasp states,
+  use them as task-2 initial distribution (distribution matching — critical for chaining).
+- Runtime chaining: state machine — grasp policy → success detect → stack policy (~10 lines).
+- Order: train grasp first, then stack. Can run on separate colab runtimes in parallel if desired.
+
+### NEW RUNTIME (2026-11-25, old ones all expired):
+runtimes/r-a65415d6-e1f1-419c-b6d9-e510279f94f2 sessions/s-6e730616-6a8c-4d45-9dbb-3e10da3e9188
+T4 standard. mujoco 4.0.1. NOTE: mujoco major version bumped (was 3.x) — watch for API diffs.
+Bootstrap: pip install xacro mujoco scipy stable_baselines3 imageio imageio-ffmpeg;
+clone turtlebot3_lime (humble-devel); transfer rl/*.py via push_gist.ps1 raw urls.
+
 ### NEXT (training phase):
 1. Launch first real training run: `python train_sac_her.py --steps 300000` in BACKGROUND on colab
    (nohup, since MCP calls time out) — monitor via artifacts_test-style logs + curve.png
@@ -222,3 +248,66 @@ cans to 39g even with fake grasping — real gripper torque is weak.
 When colab-cloud MCP fails: token in C:\Users\c0a2504494\AppData\Roaming\devin\mcp\oauth\f0ebc51063be8558.json
 expires hourly. Refresh: POST https://oauth2.googleapis.com/token with client_id/secret from
 AppData\Roaming\devin\mcp_config.json + refresh_token from the json, update access_token+expires_at.
+
+## LONG-TERM VISION (user decision 2026-11-25) — self-calibrating digital-twin manipulation stack
+
+User's project goal: publish on GitHub a complete, reproducible system for TurtleBot3-class robots:
+1. MEASUREMENT TOOLS: measure real-robot friction, mass, servo response curves, camera
+   intrinsics/distortion. Re-runnable anytime = aging/wear adaptation (recalibration on degradation).
+2. AUTO SIM CONSTRUCTION: bake measured parameters into MuJoCo scene automatically
+   (build_scene.py is already parametric — extend it), run RL training automatically.
+3. DIGITAL TWIN synchronized execution: run the sim in parallel with the real robot;
+   fuse camera observations with physics-based prediction (particle-filter-like state estimation)
+   so the system keeps estimating cube state even when camera loses it (occlusion, too close/blurry).
+   NOTE: cubes-on-table are mostly-static targets — this is an EASY case for twin fusion.
+4. BEHAVIOR STACK: rule-based navigation/discovery (mobile base) + RL grasp + RL stack = full autonomy.
+5. PORTABILITY: works on any TurtleBot3-variant via URDF-driven scene generation; publish with
+   README, reproduction steps, demo videos.
+
+### KEY DESIGN DECISIONS from vision discussion (fixed unless user overrides)
+- RL uses STATE observations, NOT raw camera pixels (same as OpenAI hide-and-seek / game AIs).
+  End-to-end image RL costs 10-100x compute — rejected for now, maybe later as fine-tuning stage.
+- Perception is a SEPARATE MODULE: camera + HSV color detection / ArUco markers -> same obs layout.
+  Rubik's cube saturated colors are an ADVANTAGE for segmentation. OpenCV cannot distinguish sim
+  renders from real images -> perception code develops in sim, ports unchanged to real robot.
+- Perception-in-the-loop training (final form): render sim camera -> run REAL perception pipeline ->
+  feed its output (noise/failures included) to policy. Agent never sees ground truth. Cost ~1.5-2x
+  training time (not 10x like end-to-end CNN).
+- OBSERVATION NOISE RANDOMIZATION: add noise to cube pose obs during training (pos +-5-10mm,
+  orient few deg). Measured mean = DR center; measured spread = DR width. SysID and DR are
+  complementary, not alternatives. Post-training noise-tolerance curve = perception spec sheet.
+- Cube velocities unmeasurable on real robot: test zero-velocity robustness post-training;
+  if degraded, retrain with cube vel/angvel zeroed (layout unchanged).
+- Real-robot RL from scratch REJECTED (QT-Opt: 7 robots x months x 580k grasps for grasping alone;
+  auto-reset problem unsolved; hardware wear). Path = sim pretrain -> real fine-tune (hundreds-thousands
+  of real trials, feasible) -> continual learning with real-data sysid correction (real2sim2real).
+- System identification measurements (real hardware, can start NOW):
+  friction via incline-slip test, cube mass via scale, servo response fitting (MOST IMPORTANT),
+  checkerboard camera calibration, drop-test for contact stiffness. Trajectory-matching auto-calib
+  (real2sim optimization) is the advanced form.
+- MuJoCo rigid-body approximation means residual gap NEVER zero -> real fine-tuning always needed,
+  but small.
+
+### PHASED ROADMAP (vertical slice first, generalize last)
+- Phase 1 (NOW): complete 2-task RL in sim (grasp, stack) + chaining demo. Includes obs-noise option.
+- Phase 2: measurement tools + first real-robot sysid; reflect into sim params.
+- Phase 3: perception module dev in sim (color cube faces, render, color/ArUco detection);
+  real-robot zero-shot eval + fine-tuning; perception-in-the-loop retraining.
+- Phase 4: digital twin synchronized state estimation (physics prediction + observation fusion).
+- Phase 5: portability, full automation, GitHub polish (docs, videos, repro instructions).
+  GitHub repo currently PRIVATE github.com/c0a2504494/lime_experiment — decide when to go public.
+
+### CLARIFIED MISCONCEPTIONS (user education — do not re-explain at length)
+- RL here IS genuine trial-and-error RL; scripted validation was physics-proof only, never training data.
+- "Ground truth observations" are standard practice (hide-and-seek/AlphaZero also use state, not pixels).
+- Task decomposition is human curriculum design; each task is still learned purely by RL.
+
+### IMMEDIATE NEXT ACTIONS (Phase 1 continuation)
+1. Finish Colab bootstrap (interrupted mid-transfer): download rl files from gist 9a43eb4dbffcc5575f567e0fc109f1eb,
+   run bootstrap_colab.py (urdf expand + scene build), verify mujoco 4.0.1 compatibility.
+2. Smoke-test env_lime_grasp.py / env_lime_stack.py (esp. stack init: does cube stay grasped after settle?).
+3. Decide with user: add obs-noise option BEFORE first training run or after baseline.
+4. Train task=grasp 300k steps in background; monitor curve.png; decision gate at 100k (if success rate 0,
+   analyze and consult user re: demos/shaping).
+5. Record terminal grasp states -> use as task-2 init distribution (distribution matching).
+
