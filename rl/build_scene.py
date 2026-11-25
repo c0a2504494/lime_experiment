@@ -90,6 +90,15 @@ if __name__ == "__main__":
     spec = build_scene()
     model = spec.compile()
     print("scene compile OK nq:", model.nq, "nu:", model.nu)
+    xml = spec.to_xml()
+    # Exclude world-geom contact vs the arm base link: the link2 mesh dips 4.4mm
+    # into the table geom at zero pose and the contact friction completely locks
+    # joint1 rotation (phantom constraint forces cancel the actuator torque).
+    if "<contact>" not in xml:
+        block = ('  <contact>\n'
+                 '    <exclude body1="world" body2="link2"/>\n'
+                 '  </contact>\n')
+        xml = xml.replace("</mujoco>", block + "</mujoco>")
     with open("/content/work/scene.xml", "w") as f:
-        f.write(spec.to_xml())
+        f.write(xml)
     print("scene.xml written")
