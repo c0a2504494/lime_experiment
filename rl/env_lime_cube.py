@@ -158,11 +158,14 @@ class LimeCubeStackEnv(gym.Env):
 
     # ------------------------------------------------------------- HER hook
     def compute_reward(self, achieved_goal, desired_goal, info):
-        # sparse: 0 on success, -1 otherwise (vectorized for HER)
+        # sparse: 0 on success, -1 otherwise (vectorized for HER).
+        # MUST match _is_success: xy within tol AND z-offset within tol of one cube height.
         achieved_goal = np.atleast_2d(achieved_goal)
         desired_goal = np.atleast_2d(desired_goal)
-        d = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
-        reward = np.where(d < self.success_xy_tol, 0.0, -1.0)
+        xy = np.linalg.norm(achieved_goal[:, :2] - desired_goal[:, :2], axis=-1)
+        zdiff = achieved_goal[:, 2] - (desired_goal[:, 2] - self.cube_size)
+        ok = (xy < self.success_xy_tol) & (np.abs(zdiff - self.cube_size) < self.success_z_tol)
+        reward = np.where(ok, 0.0, -1.0)
         return reward if reward.size > 1 else reward[0]
 
     def _is_success(self):
@@ -192,10 +195,10 @@ class LimeCubeStackEnv(gym.Env):
         jacp = np.zeros((3, self.model.nv))
         jacr = np.zeros((3, self.model.nv))
         mujoco.mj_jacSite(self.model, self.data, jacp, jacr, self.ee_site_id)
-        J = np.vstack([jacp, jacr])[:, self.arm_dof_adr]  # 6x6
+        J = jacp[:, self.arm_dof_adr]  # 3x6 — position-only IK
 
         lam = self.ik_damping
-        dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * np.eye(6), err)
+        dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * np.eye(3), err)
         dq = np.clip(dq, -0.5, 0.5)
 
         q_now = self.data.qpos[self.arm_qpos_adr].copy()
