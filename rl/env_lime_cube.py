@@ -4,7 +4,7 @@ Goal-conditioned environment: pick cube_a and stack it on cube_b.
 Action: 4D = (EE delta xyz scaled, gripper open/close command).
 Control: differential IK (damped least squares, position + fixed downward orientation).
 
-Observation layout (shared with the future ROS2 real-robot node — keep make_obs identical):
+Observation layout (shared with the future ROS2 real-robot node  Ekeep make_obs identical):
   qpos_arm (8), qvel_arm (8), ee pos+quat (7),
   cube_a pos+quat+linvel+angvel (13), cube_b same (13),
   ee->a vec (3), a->b vec (3)  => 55 dims
@@ -72,8 +72,8 @@ class LimeCubeStackEnv(gym.Env):
             for n in self.arm_joint_names
         ])
         # joint id -> qpos address
-        self.arm_qpos_adr = self.model.jnt_qposadr[self.arm_joint_names]
-        self.arm_dof_adr = self.model.jnt_dofadr[self.arm_joint_names]
+        self.arm_qpos_adr = self.model.jnt_qposadr[self.arm_qpos_idx]
+        self.arm_dof_adr = self.model.jnt_dofadr[self.arm_qpos_idx]
 
         jid_gl = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "gripper_left_joint")
         jid_gr = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "gripper_right_joint")
@@ -98,8 +98,8 @@ class LimeCubeStackEnv(gym.Env):
         self.grip_act_idx = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper_pos")
 
         # joint limits for clamping IK targets
-        self.arm_qmin = self.model.jnt_range[self.arm_joint_names, 0]
-        self.arm_qmax = self.model.jnt_range[self.arm_joint_names, 1]
+        self.arm_qmin = self.model.jnt_range[self.arm_qpos_idx, 0]
+        self.arm_qmax = self.model.jnt_range[self.arm_qpos_idx, 1]
 
         # fixed downward gripper orientation target: gripper z axis -> world -z.
         # Determined at reset from the home pose (see _set_home).
@@ -117,7 +117,7 @@ class LimeCubeStackEnv(gym.Env):
 
         self._step_count = 0
         self._renderer = None
-        self._home_key_qpos = np.array([0.0, -1.1, 1.9, 0.0, 1.0, 0.0])  # rough downward pose, tuned in scripted test
+        self._home_key_qpos = np.array([0.0, 0.1396, 0.903, 0.0, 1.7813, -0.0])  # fwd-tilt grasp-ready pose
 
     # ---------------------------------------------------------------- utils
     def _ee_pos_quat(self):
@@ -187,7 +187,7 @@ class LimeCubeStackEnv(gym.Env):
             + np.cross(r_cur[:, 1], r_des[:, 1])
             + np.cross(r_cur[:, 2], r_des[:, 2])
         )
-        err = np.concatenate([err_p, err_r])
+        err = err_p  # position-only IK (rotation control destabilized tracking; revisit)
 
         jacp = np.zeros((3, self.model.nv))
         jacr = np.zeros((3, self.model.nv))
@@ -223,9 +223,9 @@ class LimeCubeStackEnv(gym.Env):
         rng = self.np_random
         if self.randomize:
             while True:
-                ax = rng.uniform(0.13, 0.26)
+                ax = rng.uniform(0.13, 0.22)
                 ay = rng.uniform(-0.12, 0.12)
-                bx = rng.uniform(0.13, 0.26)
+                bx = rng.uniform(0.13, 0.22)
                 by = rng.uniform(-0.12, 0.12)
                 if 0.05 < np.hypot(ax - bx, ay - by) < 0.12:
                     break
