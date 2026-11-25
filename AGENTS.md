@@ -90,3 +90,60 @@
    callbacks (training curve PNGs, eval mp4 videos, checkpoints) → 3. artifact sync via base64 pull
    → 4. curriculum expansion (workspace size, parking positions, grasp quality levels L1-L4).
 - Long-term: hierarchical parking-position selection + sim-to-real via ROS2/ros2_control.
+
+## Session 3 update (2025-12) — rubber pad debugging IN PROGRESS
+
+User direction: increase friction BUT central grasp is essential (摩擦を大きく、中央をつかむ).
+
+### Approach being tested
+Flat rubber pads added as box geoms to gripper fingers (real-world analog: gluing thick rubber blocks).
+Implementation in `/content/work/scene_pad.xml` on Colab (NOT yet in git):
+- finger mesh geoms set contype=0 conaffinity=0 (collision disabled)
+- pad_l/pad_r box geoms: size [0.012, 0.004, 0.028], local pos [0, ±0.008, 0.032], friction="3 0.1 0.05"
+- pad inner separation vs ctrl: ctrl 0.019 → 88mm, ctrl 0.010 → 70mm, ctrl 0.0 → 50mm
+- cube is 57mm wide → contact occurs around ctrl ≈ +0.0035; full close target -0.010 = sep 30mm (way past cube)
+
+### BREAKTHROUGH — contact solver compliance was the root cause (SOLVED)
+Isolated test (no arm, no gravity, box-box): MuJoCo DEFAULT contacts allow **22mm penetration** under
+kp1500 servo squeeze — the pads were passing through the cube in all earlier tests. This was NEVER a
+geometry problem for the padded gripper — it was solver softness.
+
+FIX (verified in isolated test): add to BOTH cube and pad geoms:
+```
+solref="0.002 1" solimp="0.99 0.999 0.001"
+```
+penetration drops to 0.9mm (0.2mm with solimp last param 0.0001). Applied in scene_pad.xml to pads+cubes.
+CAREFUL: python string escaping wrote literal `\"` into the XML once — check for backslashes if XML parse error.
+
+### State after fix (validate15.py run, grasp phase now CORRECT):
+- pad inner sep 56.6mm vs cube 57mm — proper blocking, no penetration
+- contacts at z 0.002-0.003 and 0.056 = corners of the contact patch (NORMAL for box-box: contact points
+  are generated at patch corners only, this IS correct face-face contact)
+- cube unrotated (quat identity), gripper z-axis exactly down, pad z centered 0.030 = cube mid-height
+- xy centering error < 0.2mm — closed-loop servo works
+- CENTRAL GRASP ACHIEVED geometrically — user's requirement satisfied
+
+### LIFT BLOCKER — ROOT CAUSE IDENTIFIED: pads drag on the table
+Diagnosed facts:
+- lift IK for z 0.13 target reaches only z 0.101 (workspace limit, err 31mm) BUT still 4cm above grasp height — should visibly rise
+- arm servos track fine under load (direct j3 test: err 0.008, pads move)
+- THE REAL PROBLEM: pad half-height 0.028, pad center z ~0.030 at grasp → **pad bottom edge at z 0.002 = touching the table**. Friction 3.0 between pads and table anchors the whole arm — rigid chain arm→pads→table. This is why NOTHING moves during lift and why contacts cluster at z 0.002.
+THE FIX (do this first next session):
+1. Shorten pads: size z half 0.028 → 0.021 (span z 0.008-0.050 still covers cube mid), AND/OR
+2. Raise descend target a few mm so pad bottom edge clears table by ≥5mm
+3. Re-run validate15 — lift should now work; then verify full stack sequence
+4. IMPORTANT: pads must still span cube mid-height (cube z 0-0.057, mid 0.0285) for the central grasp requirement
+Secondary: lift IK reaching only z 0.101 is fine for validation but note workspace limits; consider lifting along a more vertical path or accepting lower lift height (z 0.09 is enough to transport).
+
+### Minimal test warnings
+- Mid-air placement tests fail trivially: cube falls before pads close (gravity race). Must start in contact or disable gravity.
+- iso2.py/pt.py on Colab: isolated penetration test harnesses — reuse them for contact param tuning.
+
+### validate script inheritance chain
+validate_grasp.py (git) → validate9/11/13/14/15.py (Colab only). validate15 = current best.
+Key params in validate15: gripper kp1500 kv15, arm kp400 kv40 forcerange ±8, gripper forcerange ±4,
+descend target padmid z 0.068, close ctrl -0.010 for 500 steps, lift target z 0.13 over 800 steps.
+
+### Colab runtime (current)
+runtimes/r-44f74e91-55cf-4f14-894b-546895ea1760 / sessions/s-629cf6d0-67f6-426f-abb5-21b8ddebf080
+Scripts: validate11-15.py (grasp validation iterations), mt.py/st.py/vi2.py (minimal tests), pad2.py, pm.py, pa.py
