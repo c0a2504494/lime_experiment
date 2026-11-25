@@ -311,3 +311,40 @@ User's project goal: publish on GitHub a complete, reproducible system for Turtl
    analyze and consult user re: demos/shaping).
 5. Record terminal grasp states -> use as task-2 init distribution (distribution matching).
 
+
+## Session 6 progress (2026-11-25) — decomposition implementation COMPLETE, ready to train
+
+### New runtime (old T4 r-a65415d6 dead; T4 capacity unavailable again)
+runtimes/r-5bb32b41-13fa-4759-839d-657794e6f393 / sessions/s-34f59485-4b22-497e-9682-98e2228c72b2
+CPU standard. mujoco 4.0.1 works fine (scene compiles, both envs run, SB3 trains).
+gist transfer: push_gist.ps1 works but api.github.com sometimes 500s — fallback: gzip+base64
+embed in execute_code with sha256 verify (small files transfer intact in one shot).
+
+### Stack env init debugging — root causes found (do not rediscover!)
+Direct teleport into cradle pose CANNOT work (0/5 held). Failure causes in order of discovery:
+1. even +-0.02rad grasp-pose joint noise tilts fingers off vertical = edge contact, fails
+2. kinematic padmid z (0.0535) vs gravity-sagged dynamic (0.0483): MUST settle arm 100 steps
+   before measuring teleport position, else cube floats 4mm and gets ejected by the close
+3. cube must teleport RESTING ON TABLE (z = half+0.2mm), never padmid-relative z
+4. **ROOT CAUSE of remaining failures: random cube B landing within 45mm of the canonical
+   grasp point (0.17, 0)** — B collides with A during close. Perfectly seed-correlated.
+   Fix: resample B until > 7cm from grasp point. Result: 10/10 seeds held, z 0.10-0.144.
+- extracted GRASP_POSE = [0, 0.4569, 1.2681, 0.0001, 1.4166, 0] (IK once on integrated scene)
+- init costs ~570 physics steps/reset (~15% overhead vs 2500 steps/episode) — acceptable.
+- random actions (even 0.3 scale) shake the cube out within ~10 steps — EXPECTED physics
+  (cradle hold is quasi-static), not a bug. Watch SAC's gentler exploration instead.
+
+### Verified working end-to-end
+- bootstrap_colab.py fixed: runs build_scene.py main as subprocess + verifies 4 critical
+  scene features (exclude, frictionloss, pads, solimp) — FAILS LOUD if missing.
+- env_lime_grasp: 55D obs, goal = spawn+8cm, rewards correct.
+- env_lime_stack: init reliable (10/10), TRAINING-DONE on 400-step mini run (299 updates).
+- BOTH tasks pass mini training runs on mujoco 4.0.1 (rc=0, SAC updates flowing).
+
+### PENDING USER DECISIONS (block training launch)
+1. obs-noise randomization: implement before first real run (recommended) or after baseline?
+2. launch --task grasp --steps 300000 (est. 2.5-3h CPU)? Colab budget consumption.
+3. stack task learnability risk: harsh exploration (cube drops fast). Decision gate at 100k:
+   if eval success still 0, consult user re: demos/shaping/curriculum.
+4. remember: after grasp training, record terminal grasp states for stack init distribution.
+
