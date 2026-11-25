@@ -35,6 +35,11 @@ def make_pad_scene(src_path: str, dst_path: str) -> None:
         '<geom name="pad_r" type="box" size="0.012 0.004 0.021" pos="0 -0.008 0.032" '
         f'friction="3 0.1 0.05" {stiff} rgba="0.9 0.1 0.1 1"/>'
     )
+    # mimic等式制約も硬化しないと負荷時に右指が押し開かれる (session4の発見)
+    xml = xml.replace(
+        '<joint joint1="gripper_right_joint" joint2="gripper_left_joint"/>',
+        f'<joint joint1="gripper_right_joint" joint2="gripper_left_joint" {stiff}/>',
+    )
     m = re.search(r'(<body name="gripper_left_link"[^>]*>)', xml)
     xml = xml[: m.end()] + pad_l + xml[m.end() :]
     m = re.search(r'(<body name="gripper_right_link"[^>]*>)', xml)

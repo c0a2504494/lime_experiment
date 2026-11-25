@@ -147,3 +147,46 @@ descend target padmid z 0.068, close ctrl -0.010 for 500 steps, lift target z 0.
 ### Colab runtime (current)
 runtimes/r-44f74e91-55cf-4f14-894b-546895ea1760 / sessions/s-629cf6d0-67f6-426f-abb5-21b8ddebf080
 Scripts: validate11-15.py (grasp validation iterations), mt.py/st.py/vi2.py (minimal tests), pad2.py, pm.py, pa.py
+
+## Session 4 (2025-12) — GRASP SUCCESS! Friction-based lift achieved
+
+User direction: reproduce official LimeSimulDemo grasping method in MuJoCo + take 10 photos.
+
+### Official demo analysis (LimeSimulDemo, cloned at C:\Users\c0a2504494\Documents\dojo\lime\LimeSimulDemo)
+- **Uses gazebo_grasp_plugin — grasping is FAKED** (object gets fixed-jointed to gripper), NOT friction physics
+- Picks cola cans lightened to 39g (0.39→0.039kg — heavy objects can't be lifted even officially)
+- Grasp style: HORIZONTAL pinch — pick pose joint=[dir,1.75,1.4,0,-1.6,0] has fingers horizontal (+x world),
+  joint5 NEGATIVE (vs our z-down +1.781 approach). Base drives forward (shift 0.175) so object ends between fingers
+- Pure horizontal pinch is KINEMATICALLY UNREACHABLE for our fixed elevated base (IK err 8cm at tilt 0-35°,
+  6mm at tilt 65°, exact at tilt 80-90°) — official geometry depends on the mobile base's low mounting
+
+### THE THREE FIXES that made friction grasping work (ALL required):
+1. Flat pad box geoms + contact stiffening (session 3): solref="0.002 1" solimp="0.99 0.999 0.001" on pads AND cubes
+2. **Equality/mimic constraint stiffening — THE missing piece**: under contact load the default soft equality
+   let the right finger get pushed open (+0.0134 vs left -0.0065!) — cube squeezed out one-sidedly.
+   Fix: same solref/solimp on the <equality><joint> element. Now both joints blocked at +0.0032 at cube contact.
+   Free space test alone doesn't reveal this — MUST test under load. Now baked into make_pad_scene.py.
+3. **Vertical grasp orientation (tilt 90)**: at tilt 65 the pads are tilted 25° from vertical → edge-only contact,
+   lost instantly on lift. At tilt 90 pad faces vertical = full face contact with cube faces.
+   ALSO: axis-aligned approach matters — closing direction must align with cube faces (cube A moved to (0.17, 0)).
+
+### Verified results (validate_pinch.py in git, pinch90.py on Colab):
+- closed gq +0.0032 = properly blocked at cube width (sep 56.5mm vs cube 57mm)
+- normal force only ~0.93N total but friction 3.0 → capacity ~2.8N >> weight 0.88N
+- **LIFT-OK: cube z 0.0631 airborne held (one run), 0.0455 another (workspace-limited lift height varies)**
+- tilt 80 partially works (cube z 0.0376 then slips)
+- Photos: rl_artifacts/pinch_success.jpg (10-frame grid showing straddle→close→airborne lift)
+
+### Remaining work for full stacking:
+1. Transport to cube B + place (IK path with load, descent, open)
+2. Lift height limited by workspace — z 0.10 padmid max in some directions; cube z 0.045-0.063 reached.
+   For stacking need cube bottom > 0.057+clearance — marginal! May need higher lift or tilted transport
+3. THEN: port everything to env_lime_cube.py (domain randomization compat — friction DR 0.3-1.0 vs pads 3.0
+   needs rethinking: pads are rubber fixed at 3.0, cube/table friction randomized)
+4. SAC+HER training can start once scripted stack succeeds
+5. Real-robot correspondence: pads = physical rubber blocks glued inside fingers (hardware mod required!)
+
+### OAuth token refresh procedure (recurring issue)
+When colab-cloud MCP fails: token in C:\Users\c0a2504494\AppData\Roaming\devin\mcp\oauth\f0ebc51063be8558.json
+expires hourly. Refresh: POST https://oauth2.googleapis.com/token with client_id/secret from
+AppData\Roaming\devin\mcp_config.json + refresh_token from the json, update access_token+expires_at.
