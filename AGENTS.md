@@ -372,3 +372,39 @@ TO LAUNCH TRAINING (first thing next session, ~5 min):
 6. Colab compute budget measured: CPU standard 0.07-0.08 units/h -> 100 units/month Pro
    quota is effectively unlimited for this project (~1300h). GPU unnecessary (physics CPU-bound).
 
+
+## TRAINING RUNNING (2026-11-26) — first real SAC+HER runs launched
+
+### Active runtimes (2 parallel, both CPU standard)
+- grasp: runtimes/r-90332cf3-024a-47ef-9366-c77b0731043d sessions/s-ddf4b6f4-8d0c-47d5-9778-f4d70475de3d
+  `python train_sac_her.py --task grasp --steps 500000` — measured 28.4 steps/s, ETA ~4.8h
+  pid 1397, log /content/work/run_grasp/log.txt
+- stack: runtimes/r-5fb8fdba-f31f-48f6-a90a-ee9f2f233609 sessions/s-700f1482-3bc6-405d-a2be-7df99e2f0e80
+  `python train_sac_her.py --task stack --steps 500000` — measured 22.2 steps/s, ETA ~6.2h
+  pid 736, log /content/work/run_stack/log.txt
+- parallel on one runtime halves fps (2 vCPU); two separate runtimes = full speed each.
+  Cost trivial: ~0.08 units/h/runtime (Pro quota 100/month).
+
+### Training config active
+- obs_noise_pos=0.004 default ON (env_lime_cube.py). achieved_goal stays TRUE
+  (fixed bug: noise initially leaked into achieved_goal — HER credit assignment would
+  have been corrupted; caught by assertion in pre-launch smoke test).
+- checkpoints every 50k steps, eval success rate + mp4 every 25k, curve.png in run dir.
+
+### MCP outage root cause found (do not rediscover!)
+PowerShell Set-Content/Out-File -Encoding UTF8 writes a BOM (EF BB BF). The colab-cloud MCP
+server CHOKES on the BOM in the oauth json and fails to start at all ("Failed to connect to
+MCP server"). FIX: write with [IO.File]::WriteAllText + UTF8Encoding($false), then refresh
+token as before. After BOM removal + token refresh the server came back immediately.
+
+### Monitoring / next actions
+1. check progress: parse `total_timesteps` from run_*/log.txt; eval success rate appears
+   every 25k steps in log + curve.png
+2. DECISION GATE at 100k: if eval success rate still 0 for grasp, consult user before
+   burning more compute (options: scripted-demo bootstrapping, light shaping, action scale)
+3. after grasp succeeds: record terminal grasp states -> replace canonical init in
+   env_lime_stack (distribution matching) -> retrain stack
+4. artifact pull: curve.png + eval mp4s via base64 in stdout (small files OK)
+5. runtime death = total loss (ephemeral disk). Checkpoints are the only mitigation;
+   if a runtime dies, restart training from scratch — compute is nearly free.
+

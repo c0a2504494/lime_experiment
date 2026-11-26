@@ -145,6 +145,7 @@ class LimeCubeStackEnv(gym.Env):
         ee_pos, ee_quat = self._ee_pos_quat()
         ca = self._cube_state(self.cube_a_qpos, self.cube_a_dof)
         cb = self._cube_state(self.cube_b_qpos, self.cube_b_dof)
+        ca_pos_true = ca[0].copy()  # achieved_goal must stay TRUE for correct HER credit assignment
         # observation noise: models real perception error (color segmentation on the real
         # robot is expected ~few mm). Applied to cube positions AND derived relative vectors
         # consistently. achieved/desired goals stay TRUE so reward/HER credit assignment is
@@ -163,7 +164,7 @@ class LimeCubeStackEnv(gym.Env):
         ])
         return {
             "observation": obs.astype(np.float64),
-            "achieved_goal": ca[0].astype(np.float64),
+            "achieved_goal": ca_pos_true.astype(np.float64),
             "desired_goal": self._desired_goal.astype(np.float64),
         }
 
