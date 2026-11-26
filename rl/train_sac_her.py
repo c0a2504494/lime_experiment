@@ -61,13 +61,14 @@ def make_env(task="full"):
 class EvalCallback(BaseCallback):
     """Periodic greedy eval: success rate over n episodes + video frames."""
 
-    def __init__(self, eval_every=25_000, n_eval=5, out_dir="/content/work/artifacts", task="full"):
+    def __init__(self, eval_every=25_000, n_eval=5, out_dir="/content/work/artifacts", task="full", video=False):
         super().__init__()
         self.eval_every = eval_every
         self.n_eval = n_eval
         self.out_dir = out_dir
         self.history = []
         self.task = task
+        self.video = video
         os.makedirs(out_dir, exist_ok=True)
         os.makedirs(os.path.join(out_dir, "checkpoints"), exist_ok=True)
 
@@ -92,7 +93,7 @@ class EvalCallback(BaseCallback):
                 obs, r, term, trunc, info = env.step(act)
                 ep_rew += r
                 done = term or trunc
-                if ep == 0 and len(frames) < 100:
+                if self.video and ep == 0 and len(frames) < 100:
                     frames.append(env.render())
             succ.append(bool(info.get("is_success", False)))
             rews.append(ep_rew)
@@ -100,7 +101,7 @@ class EvalCallback(BaseCallback):
         self.history.append((self.num_timesteps, rate, float(np.mean(rews))))
         print(f"[eval] t={self.num_timesteps} success={rate:.2f} rew={np.mean(rews):.1f}")
         self.logger.record("eval/success_rate", rate)
-        if frames:
+        if self.video and frames:
             import imageio.v2 as imageio
             os.makedirs(os.path.join(self.out_dir, "eval_videos"), exist_ok=True)
             imageio.mimsave(
