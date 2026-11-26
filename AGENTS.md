@@ -408,3 +408,4 @@ token as before. After BOM removal + token refresh the server came back immediat
 5. runtime death = total loss (ephemeral disk). Checkpoints are the only mitigation;
    if a runtime dies, restart training from scratch — compute is nearly free.
 
+`n### LAUNCH LESSON (2026-11-26): Popen children of the Jupyter kernel DIE when the kernel/session cycles (proxy token expires hourly). First 500k runs died at ~25k steps. FIX: always launch with `start_new_session=True` AND `nohup` — verified relaunched OK. Checkpoint interval 50k means <50k progress is always lost on death; consider 25k checkpoints for long runs.
