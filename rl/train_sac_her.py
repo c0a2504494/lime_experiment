@@ -17,6 +17,7 @@ import os
 os.environ.setdefault("MUJOCO_GL", "egl")
 import sys
 import argparse
+import time
 import numpy as np
 
 sys.path.insert(0, "/content/work")
@@ -109,8 +110,41 @@ class EvalCallback(BaseCallback):
                 frames, fps=20,
             )
         env.close()
+        self._sync_artifacts()
         self._save_curve()
 
+    def _sync_artifacts(self):
+        """Push artifacts to a secret gist so runtime death never loses progress. NEVER raises."""
+        try:
+            import json, urllib.request, base64 as b64mod
+            gist_id = os.environ.get('ARTIFACT_GIST', '')
+            tok_path = '/content/work/.ghtok'
+            if not gist_id or not os.path.exists(tok_path):
+                return
+            tok = open(tok_path).read().strip()
+            files = {}
+            files['eval_history.json'] = {'content': json.dumps(self.history)}
+            files['train_meta.json'] = {'content': json.dumps({'task': self.task, 'steps': self.num_timesteps, 'ts': time.time()})}
+            cpng = os.path.join(self.out_dir, 'curve.png')
+            if os.path.exists(cpng):
+                files['curve_png.b64'] = {'content': b64mod.b64encode(open(cpng, 'rb').read()).decode()}
+            ckdir = os.path.join(self.out_dir, 'checkpoints')
+            if os.path.isdir(ckdir):
+                zips = sorted(f for f in os.listdir(ckdir) if f.endswith('.zip'))
+                if zips and zips[-1] != getattr(self, '_synced_ckpt', None):
+                    raw = open(os.path.join(ckdir, zips[-1]), 'rb').read()
+                    if len(raw) < 5000000:
+                        key = 'ckpt_latest_zip.b64'
+                        files[key] = {'content': b64mod.b64encode(raw).decode()}
+                        files['ckpt_latest.txt'] = {'content': zips[-1]}
+                        self._synced_ckpt = zips[-1]
+            body = json.dumps({'files': files}).encode()
+            req = urllib.request.Request('https://api.github.com/gists/' + gist_id, data=body, method='PATCH',
+                headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+            urllib.request.urlopen(req, timeout=30).read()
+            print('[sync] artifacts pushed at t=%d' % self.num_timesteps)
+        except Exception as e:
+            print('[sync] failed (non-fatal):', e)
     def _save_curve(self):
         try:
             import matplotlib
@@ -156,6 +190,7 @@ def main():
     cb = EvalCallback(out_dir=args.out, task=args.task)
     model.learn(total_timesteps=args.steps, callback=cb)
     model.save(os.path.join(args.out, "final_model"))
+    cb._sync_artifacts()
     print("TRAINING-DONE")
 
 
