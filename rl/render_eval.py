@@ -28,6 +28,7 @@ except ImportError:
     pass
 
 from stable_baselines3 import SAC
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 from env_lime_cube import LimeCubeStackEnv
 from env_lime_grasp import LimeGraspEnv
@@ -68,7 +69,7 @@ def main():
     print("loading", ckpt)
 
     env = TASKS[args.task](SCENE)
-    model = SAC.load(ckpt, env=None)
+    model = SAC.load(ckpt, env=DummyVecEnv([lambda: TASKS[args.task](SCENE)]))
 
     import imageio.v2 as imageio
     all_frames = []
