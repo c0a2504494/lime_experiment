@@ -419,3 +419,11 @@ Both: scene verified, 500k steps, ETA ~5-6.5h (done ~15:00-16:30 UTC). Runtime 2
 Artifact sync TEST-PASSED (gist PATCH 200 from runtime). Sync every 25k eval: eval_history.json, curve_png.b64, ckpt_latest_zip.b64 into artifact gists. VERIFY SYNC at first eval (~10:00 UTC): read gist 1220c89d6a9fb276dd878447f29166a1 — should contain eval_history.json with real data.
 CRITICAL: 25k-step wall is the crash-test milestone (~15min after launch). If processes survive past 25k AND gist has data, both fixes confirmed.
 If runtimes die before completion: artifacts survive in gists — can resume by loading ckpt_latest. Runtimes expire 24h after creation regardless.
+
+### ROUND-4 RUNNING (2026-11-28 ~10:15 UTC) — demos + fixed sync
+Runtime1 grasp+demos: runtimes/r-3f7c30db-49b1-403e-87b2-df65e820be86 sessions/s-30db3927-836f-42c9-a98b-b53fe1e1941a — 300k steps, 5302 demo transitions prefilled (101 successful scripted grasps), artifact gist 1220c89d6a9fb276dd878447f29166a1
+Runtime2 stack: runtimes/r-6d18de1d-d257-4a2e-b67e-3482bc597140 sessions/s-eef4050b-8aba-43f2-9e77-54727035437a — 400k steps (reduced: round3 hit 100pct by 250k), no demos (self-learns), artifact gist e5d40339e58af05e0ead16a3a237160f
+FIXED in train_sac_her.py: numeric ckpt sort, brute-force upload every sync, ckpt before eval ordering, 25k ckpt cadence, --resume flag (gist warm-start), --demos prefill (vectorized for HerReplayBuffer.add — needs [None] batch dims)
+Demo generator: make_grasp_demos.py — padmid-servo phase machine through env actions, 67% scripted success, lift target +12cm margin (ceiling ~5.5cm real lift)
+VERIFY at first eval (~15min after launch): gist ckpt_latest.txt must say sac_25000 (not sac_50000 stuck!) and eval_history must accumulate.
+Runtime expiry ~10:05 UTC 11-29. Training ETAs: grasp ~3h (300k), stack ~4h (400k).
