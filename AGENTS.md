@@ -427,3 +427,5 @@ FIXED in train_sac_her.py: numeric ckpt sort, brute-force upload every sync, ckp
 Demo generator: make_grasp_demos.py — padmid-servo phase machine through env actions, 67% scripted success, lift target +12cm margin (ceiling ~5.5cm real lift)
 VERIFY at first eval (~15min after launch): gist ckpt_latest.txt must say sac_25000 (not sac_50000 stuck!) and eval_history must accumulate.
 Runtime expiry ~10:05 UTC 11-29. Training ETAs: grasp ~3h (300k), stack ~4h (400k).
+
+### RENDERING on Colab (hard-won, 2026-11-28): EGL segfaults natively on current colab runtime images (llvmpipe/libLLVM crash, no traceback, silent death — killed training 2x at 25k eval before video was disabled). FIX: MUJOCO_GL=osmesa + apt-get install libosmesa6 — VERIFIED WORKING for offscreen render. Use render_eval.py as separate process with -u (unbuffered). NEVER use egl for rendering on colab.
