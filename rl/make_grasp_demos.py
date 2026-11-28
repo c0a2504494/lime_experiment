@@ -95,7 +95,7 @@ class ScriptedGrasper:
                 self.phase_t = 0
             grip = -1.0  # close
         else:  # LIFT toward the goal point (spawn + 8cm, small margin)
-            tgt = spawn_goal + np.array([0, 0, 0.01])
+            tgt = spawn_goal + np.array([0, 0, 0.04])
             a = self._servo_action(tgt)
             grip = -1.0  # keep closed
         return np.array([a[0], a[1], a[2], grip], dtype=np.float32)
