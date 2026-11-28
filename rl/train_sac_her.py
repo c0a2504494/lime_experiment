@@ -224,11 +224,11 @@ def prefill_demos(model, demos_path):
     n = len(d['actions'])
     obs_keys = list(d['obs_keys']) if 'obs_keys' in d else ['observation', 'achieved_goal', 'desired_goal']
     for i in range(n):
-        obs = {k: d['obs_' + k][i] for k in obs_keys}
-        nobs = {k: d['next_obs_' + k][i] for k in obs_keys}
-        act = d['actions'][i]
-        rew = float(d['rewards'][i])
-        done = bool(d['dones'][i])
+        obs = {k: d['obs_' + k][i][None].copy() for k in obs_keys}
+        nobs = {k: d['next_obs_' + k][i][None].copy() for k in obs_keys}
+        act = np.asarray(d['actions'][i])[None].copy()
+        rew = np.array([float(d['rewards'][i])])
+        done = np.array([bool(d['dones'][i])])
         model.replay_buffer.add(obs, nobs, act, rew, done, [{}])
     print('[demos] prefilled %d transitions (successes: %d)' % (n, int(d['episode_success'].sum()) if 'episode_success' in d else -1))
 
